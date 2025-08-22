@@ -32,22 +32,7 @@ def apply_leave(name, leave_type, days):
     conn.commit()
 
 # Layout
-st.title(
-    """
-    <style>
-    .title-left {
-        text-align: left;
-        font-size: 5em;
-        font-weight: bold;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# Use custom title
-st.markdown('<p class="title-left">🏢 Employee Leave Management System</p>', unsafe_allow_html=True)
-
+st.title("🏢 Employee Leave Management System")
 
 left_col, right_col = st.columns(2)
 

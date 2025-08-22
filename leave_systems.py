@@ -1,72 +1,76 @@
 import streamlit as st
 import sqlite3
+import pandas as pd
 
-# --- Database Setup ---
+# Database connection
 def init_db():
     conn = sqlite3.connect("leave_management.db")
-    c = conn.cursor()
-    c.execute('''
+    cursor = conn.cursor()
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            paid_leaves_left INTEGER DEFAULT 12,
-            sick_leaves_left INTEGER DEFAULT 12
+            name TEXT,
+            paid_leaves INTEGER DEFAULT 12,
+            sick_leaves INTEGER DEFAULT 12
         )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS leave_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER,
-            leave_type TEXT,
-            days INTEGER,
-            status TEXT DEFAULT 'Pending',
-            FOREIGN KEY(employee_id) REFERENCES employees(id)
-        )
-    ''')
+    """)
     conn.commit()
     return conn
 
-# --- DB Helper Functions ---
+# Add employee
+def add_employee(conn, name):
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO employees (name) VALUES (?)", (name,))
+    conn.commit()
+
+# Get employees
 def get_employees(conn):
-    c = conn.cursor()
-    c.execute("SELECT name, paid_leaves_left, sick_leaves_left FROM employees")
-    return c.fetchall()
+    return pd.read_sql("SELECT id, name FROM employees", conn)
 
-def get_leave_requests(conn):
-    c = conn.cursor()
-    c.execute("SELECT id, employee_id, leave_type, days, status FROM leave_requests")
-    return c.fetchall()
+# Get leave records
+def get_leave_records(conn):
+    return pd.read_sql("SELECT name, paid_leaves, sick_leaves FROM employees", conn)
 
-# --- Main App ---
-def main():
-    st.title("🏢 Leave Management System (POC)")
-
-    conn = init_db()
-
-    # Section 1: Employee Records
-    st.subheader("📋 Employee Records")
-    employees = get_employees(conn)
-    if employees:
-        st.table(
-            [{"Name": emp[0], "Paid Leaves Left": emp[1], "Sick Leaves Left": emp[2]} for emp in employees]
-        )
+# Deduct leave
+def deduct_leave(conn, name, leave_type):
+    cursor = conn.cursor()
+    if leave_type == "Paid Leave":
+        cursor.execute("UPDATE employees SET paid_leaves = paid_leaves - 1 WHERE name = ? AND paid_leaves > 0", (name,))
     else:
-        st.info("No employees found. Please add employees to view records.")
+        cursor.execute("UPDATE employees SET sick_leaves = sick_leaves - 1 WHERE name = ? AND sick_leaves > 0", (name,))
+    conn.commit()
 
-    st.markdown("---")  # separator line
+# Streamlit App
+st.title("🏢 Leave Management System")
 
-    # Section 2: Leave Management
-    st.subheader("📝 Leave Management")
-    leave_requests = get_leave_requests(conn)
-    if leave_requests:
-        st.table(
-            [
-                {"Request ID": req[0], "Employee ID": req[1], "Leave Type": req[2], "Days": req[3], "Status": req[4]}
-                for req in leave_requests
-            ]
-        )
-    else:
-        st.info("No leave requests yet.")
+conn = init_db()
 
-if __name__ == "__main__":
-    main()
+# Sidebar - Add Employee
+st.sidebar.header("➕ Add Employee")
+new_name = st.sidebar.text_input("Employee Name")
+if st.sidebar.button("Add"):
+    if new_name.strip():
+        add_employee(conn, new_name.strip())
+        st.sidebar.success(f"Employee {new_name} added!")
+
+# Leave Application Section
+st.subheader("📝 Apply for Leave")
+employees_df = get_employees(conn)
+if not employees_df.empty:
+    selected_emp = st.selectbox("Select Employee", employees_df["name"])
+    leave_type = st.radio("Leave Type", ["Paid Leave", "Sick Leave"])
+    if st.button("Apply Leave"):
+        deduct_leave(conn, selected_emp, leave_type)
+        st.success(f"{leave_type} applied for {selected_emp}!")
+else:
+    st.warning("No employees found. Please add an employee first.")
+
+# Display Employee List
+st.subheader("👥 Employee List")
+emp_list = get_employees(conn)
+st.table(emp_list)
+
+# Display Leave Records
+st.subheader("📋 Leave Records")
+leave_records = get_leave_records(conn)
+st.table(leave_records)

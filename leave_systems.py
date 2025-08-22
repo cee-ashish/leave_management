@@ -1,12 +1,14 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-# --- Database setup ---
+
+# Database connection
 def init_db():
-    conn = sqlite3.connect("leave_system.db")
-    conn.execute("""
+    conn = sqlite3.connect("leave_management.db")
+    cursor = conn.cursor()
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
-            emp_id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             paid_leaves INTEGER DEFAULT 12,
             sick_leaves INTEGER DEFAULT 12
@@ -15,81 +17,60 @@ def init_db():
     conn.commit()
     return conn
 
-# --- Add Employee ---
-def add_employee(conn, emp_id, name):
-    conn.execute("""
-        INSERT OR REPLACE INTO employees (emp_id, name, paid_leaves, sick_leaves)
-        VALUES (?, ?, 12, 12)
-    """, (emp_id, name))
+# Add employee
+def add_employee(conn, name):
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO employees (name) VALUES (?)", (name,))
     conn.commit()
 
-# --- Apply Leave ---
-def apply_leave(conn, emp_id, leave_type, days):
-    cursor = conn.cursor()
-    cursor.execute("SELECT paid_leaves, sick_leaves FROM employees WHERE emp_id = ?", (emp_id,))
-    row = cursor.fetchone()
-
-    if not row:
-        return False, "Employee not found!"
-
-    paid, sick = row
-
-    if leave_type == "Paid Leave":
-        if paid >= days:
-            conn.execute("UPDATE employees SET paid_leaves = paid_leaves - ? WHERE emp_id = ?", (days, emp_id))
-            conn.commit()
-            return True, f"Leave approved! {days} Paid Leave deducted."
-        else:
-            return False, "Not enough Paid Leaves left."
-
-    elif leave_type == "Sick Leave":
-        if sick >= days:
-            conn.execute("UPDATE employees SET sick_leaves = sick_leaves - ? WHERE emp_id = ?", (days, emp_id))
-            conn.commit()
-            return True, f"Leave approved! {days} Sick Leave deducted."
-        else:
-            return False, "Not enough Sick Leaves left."
-
-    return False, "Invalid leave type."
-
-# --- Get Employee Records ---
+# Get employees
 def get_employees(conn):
-    return conn.execute("SELECT emp_id,name, paid_leaves, sick_leaves FROM employees").fetchall()
+    return pd.read_sql("SELECT id, name FROM employees", conn)
 
-# --- Streamlit App ---
+# Get leave records
+def get_leave_records(conn):
+    return pd.read_sql("SELECT name, paid_leaves, sick_leaves FROM employees", conn)
+
+# Deduct leave
+def deduct_leave(conn, name, leave_type):
+    cursor = conn.cursor()
+    if leave_type == "Paid Leave":
+        cursor.execute("UPDATE employees SET paid_leaves = paid_leaves - 1 WHERE name = ? AND paid_leaves > 0", (name,))
+    else:
+        cursor.execute("UPDATE employees SET sick_leaves = sick_leaves - 1 WHERE name = ? AND sick_leaves > 0", (name,))
+    conn.commit()
+
+# Streamlit App
 st.title("🏢 Leave Management System")
 
 conn = init_db()
 
-# Add employee section
-st.subheader("➕ Add New Employee")
-with st.form("add_emp_form"):
-    emp_id = st.text_input("Employee ID")
-    name = st.text_input("Employee Name")
-    submit = st.form_submit_button("Add Employee")
-    if submit and emp_id and name:
-        add_employee(conn, emp_id, name)
-        st.success(f"Employee {name} added successfully!")
+# Sidebar - Add Employee
+st.sidebar.header("➕ Add Employee")
+new_name = st.sidebar.text_input("Employee Name")
+if st.sidebar.button("Add"):
+    if new_name.strip():
+        add_employee(conn, new_name.strip())
+        st.sidebar.success(f"Employee {new_name} added!")
 
-# Apply leave section
-st.subheader("📝 Apply Leave")
-with st.form("leave_form"):
-    emp_id_leave = st.text_input("Employee ID (for leave)")
-    leave_type = st.selectbox("Leave Type", ["Paid Leave", "Sick Leave"])
-    days = st.number_input("Number of Days", min_value=1, max_value=12)
-    apply = st.form_submit_button("Apply Leave")
-    if apply and emp_id_leave:
-        success, msg = apply_leave(conn, emp_id_leave, leave_type, days)
-        if success:
-            st.success(msg)
-        else:
-            st.error(msg)
-
-# Employee Records Table
-st.subheader("📋 Employee Records")
-employees = get_employees(conn)
-df = pd.DataFrame(employees, columns=["emp_id","Name", "Paid Leaves Left", "Sick Leaves Left"])
-if employees:
-    st.table(df)
+# Leave Application Section
+st.subheader("📝 Apply for Leave")
+employees_df = get_employees(conn)
+if not employees_df.empty:
+    selected_emp = st.selectbox("Select Employee", employees_df["name"])
+    leave_type = st.radio("Leave Type", ["Paid Leave", "Sick Leave"])
+    if st.button("Apply Leave"):
+        deduct_leave(conn, selected_emp, leave_type)
+        st.success(f"{leave_type} applied for {selected_emp}!")
 else:
-    st.info("No employee records found yet.")
+    st.warning("No employees found. Please add an employee first.")
+
+# Display Employee List
+st.subheader("👥 Employee List")
+emp_list = get_employees(conn)
+st.table(emp_list)
+
+# Display Leave Records
+st.subheader("📋 Leave Records")
+leave_records = get_leave_records(conn)
+st.table(leave_records)

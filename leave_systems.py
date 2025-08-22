@@ -37,7 +37,7 @@ st.markdown(
     <style>
     .title-left {
         text-align: left;
-        font-size: 2em;
+        font-size: 5em;
         font-weight: bold;
     }
     </style>

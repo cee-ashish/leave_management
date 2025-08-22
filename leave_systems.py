@@ -32,7 +32,7 @@ def apply_leave(name, leave_type, days):
     conn.commit()
 
 # Layout
-st.markdown(
+st.title(
     """
     <style>
     .title-left {
